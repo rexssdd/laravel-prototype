@@ -32,9 +32,9 @@ return [
     | Limits
     |--------------------------------------------------------------------------
     */
-    'timeout'        => env('ML_TIMEOUT', 180),   // seconds per file
-    'max_files'      => env('ML_MAX_FILES', 25),
-    'max_file_kb'    => env('ML_MAX_FILE_KB', 262144),  // 256 MB
-    'keep_uploads'   => env('ML_KEEP_UPLOADS', false),
+    'timeout' => env('ML_TIMEOUT', 180),   // seconds per file
+    'max_files' => env('ML_MAX_FILES', 25),
+    'max_file_kb' => env('ML_MAX_FILE_KB', 262144),  // 256 MB
+    'keep_uploads' => env('ML_KEEP_UPLOADS', false),
 
 ];

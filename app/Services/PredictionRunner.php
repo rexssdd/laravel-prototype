@@ -22,7 +22,7 @@ class PredictionRunner
 
     /**
      * @param  string  $absolutePath  CSV on local disk
-     * @param  string  $displayName   original filename, for the UI
+     * @param  string  $displayName  original filename, for the UI
      */
     public function run(string $absolutePath, string $displayName): array
     {
@@ -60,9 +60,9 @@ class PredictionRunner
 
         if ($stdout === '') {
             Log::error('predict.py produced no output', [
-                'file'   => $displayName,
+                'file' => $displayName,
                 'stderr' => $process->getErrorOutput(),
-                'exit'   => $process->getExitCode(),
+                'exit' => $process->getExitCode(),
             ]);
 
             return $this->fail(
@@ -76,7 +76,7 @@ class PredictionRunner
 
         if (! is_array($decoded)) {
             Log::error('predict.py returned malformed JSON', [
-                'file'   => $displayName,
+                'file' => $displayName,
                 'stdout' => mb_substr($stdout, 0, 2000),
             ]);
 

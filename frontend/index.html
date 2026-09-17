@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hybrid IF-SVM Analysis</title>
+    <style>
+        body { font: 16px system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #172033; }
+        button { cursor: pointer; padding: 10px 16px; }
+        #dropzone { border: 2px dashed #9aa5b1; padding: 48px 20px; text-align: center; }
+        #dropzone.active { border-color: #2563eb; background: #eff6ff; }
+        #error { color: #b91c1c; }
+        pre { white-space: pre-wrap; overflow: auto; background: #f4f6f8; padding: 16px; }
+    </style>
+</head>
+<body>
+    <h1>Hybrid IF-SVM Analysis</h1>
+    <p>Upload a CSV containing the nine required network-flow columns.</p>
+    <div id="dropzone"><p>Drop a CSV here</p><input id="file" type="file" accept=".csv,text/csv"></div>
+    <p><button id="analyse" disabled>Analyse CSV</button></p>
+    <p id="status"></p><p id="error"></p><pre id="result" hidden></pre>
+    <script>
+        const API_URL = window.HYBRID_API_URL || 'http://localhost:8000';
+        const fileInput = document.querySelector('#file');
+        const dropzone = document.querySelector('#dropzone');
+        const button = document.querySelector('#analyse');
+        const status = document.querySelector('#status');
+        const error = document.querySelector('#error');
+        const result = document.querySelector('#result');
+        let selectedFile;
+
+        function selectFile(file) {
+            selectedFile = file;
+            button.disabled = !file || !file.name.toLowerCase().endsWith('.csv');
+            error.textContent = button.disabled ? 'Please choose a CSV file.' : '';
+        }
+        fileInput.addEventListener('change', () => selectFile(fileInput.files[0]));
+        ['dragenter', 'dragover'].forEach(type => dropzone.addEventListener(type, event => {
+            event.preventDefault(); dropzone.classList.add('active');
+        }));
+        ['dragleave', 'drop'].forEach(type => dropzone.addEventListener(type, event => {
+            event.preventDefault(); dropzone.classList.remove('active');
+        }));
+        dropzone.addEventListener('drop', event => selectFile(event.dataTransfer.files[0]));
+        button.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            const form = new FormData(); form.append('file', selectedFile);
+            button.disabled = true; error.textContent = ''; result.hidden = true;
+            status.textContent = 'Analysing...';
+            try {
+                const response = await fetch(`${API_URL}/analyse`, { method: 'POST', body: form });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || data.error || 'Analysis failed.');
+                result.textContent = JSON.stringify(data, null, 2); result.hidden = false;
+                status.textContent = 'Analysis complete.';
+            } catch (exception) { error.textContent = exception.message; status.textContent = ''; }
+            button.disabled = false;
+        });
+    </script>
+</body>
+</html>

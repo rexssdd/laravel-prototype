@@ -11,16 +11,14 @@ use Illuminate\View\View;
 
 class AnalysisController extends Controller
 {
-    public function __construct(private PredictionRunner $runner)
-    {
-    }
+    public function __construct(private PredictionRunner $runner) {}
 
     public function index(): View
     {
         return view('analysis.index', [
-            'bundleReady'  => $this->runner->bundleExists(),
-            'maxFiles'     => (int) config('ml.max_files'),
-            'maxFileMb'    => round(((int) config('ml.max_file_kb')) / 1024),
+            'bundleReady' => $this->runner->bundleExists(),
+            'maxFiles' => (int) config('ml.max_files'),
+            'maxFileMb' => round(((int) config('ml.max_file_kb')) / 1024),
         ]);
     }
 
@@ -37,7 +35,7 @@ class AnalysisController extends Controller
         $maxFiles = (int) config('ml.max_files');
 
         $request->validate([
-            'files'   => ['required', 'array', 'max:'.$maxFiles],
+            'files' => ['required', 'array', 'max:'.$maxFiles],
             'files.*' => [
                 'required',
                 'file',
@@ -48,13 +46,13 @@ class AnalysisController extends Controller
                 'mimes:csv,txt',
             ],
         ], [
-            'files.max'     => "Please upload at most {$maxFiles} files at a time.",
-            'files.*.max'   => 'One of the files exceeds the size limit.',
+            'files.max' => "Please upload at most {$maxFiles} files at a time.",
+            'files.*.max' => 'One of the files exceeds the size limit.',
             'files.*.mimes' => 'Only CSV files can be analysed.',
         ]);
 
         $results = [];
-        $stored  = [];
+        $stored = [];
 
         foreach ($request->file('files') as $file) {
 
@@ -106,12 +104,12 @@ class AnalysisController extends Controller
         }
 
         $labelled = collect($ok)->every(fn ($r) => $r['labelled'] ?? false);
-        $rows     = array_sum(array_column($ok, 'rows'));
+        $rows = array_sum(array_column($ok, 'rows'));
 
         $summary = [
-            'files'    => count($ok),
-            'failed'   => count($results) - count($ok),
-            'rows'     => $rows,
+            'files' => count($ok),
+            'failed' => count($results) - count($ok),
+            'rows' => $rows,
             'labelled' => $labelled,
         ];
 
@@ -135,9 +133,9 @@ class AnalysisController extends Controller
                 }
 
                 $summary[$model] = [
-                    'rows'        => $rows,
-                    'attacks'     => $attacks,
-                    'normal'      => $rows - $attacks,
+                    'rows' => $rows,
+                    'attacks' => $attacks,
+                    'normal' => $rows - $attacks,
                     'attack_rate' => $rows ? $attacks / $rows : 0,
                 ];
             }
@@ -148,25 +146,25 @@ class AnalysisController extends Controller
 
     private function confusion(int $tp, int $fp, int $fn, int $tn): array
     {
-        $total     = $tp + $fp + $fn + $tn;
+        $total = $tp + $fp + $fn + $tn;
         $precision = ($tp + $fp) ? $tp / ($tp + $fp) : 0.0;
-        $recall    = ($tp + $fn) ? $tp / ($tp + $fn) : 0.0;
-        $spec      = ($tn + $fp) ? $tn / ($tn + $fp) : 0.0;
+        $recall = ($tp + $fn) ? $tp / ($tp + $fn) : 0.0;
+        $spec = ($tn + $fp) ? $tn / ($tn + $fp) : 0.0;
 
         $denom = sqrt(
             (float) ($tp + $fp) * ($tp + $fn) * ($tn + $fp) * ($tn + $fn)
         );
 
         return [
-            'accuracy'          => $total ? ($tp + $tn) / $total : 0.0,
-            'precision'         => $precision,
-            'recall'            => $recall,
-            'specificity'       => $spec,
+            'accuracy' => $total ? ($tp + $tn) / $total : 0.0,
+            'precision' => $precision,
+            'recall' => $recall,
+            'specificity' => $spec,
             'balanced_accuracy' => 0.5 * ($recall + $spec),
-            'f1'                => ($precision + $recall)
+            'f1' => ($precision + $recall)
                 ? 2 * $precision * $recall / ($precision + $recall)
                 : 0.0,
-            'mcc'               => $denom ? (($tp * $tn) - ($fp * $fn)) / $denom : 0.0,
+            'mcc' => $denom ? (($tp * $tn) - ($fp * $fn)) / $denom : 0.0,
             'tp' => $tp, 'fp' => $fp, 'fn' => $fn, 'tn' => $tn,
         ];
     }
