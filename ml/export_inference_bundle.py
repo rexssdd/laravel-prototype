@@ -114,6 +114,8 @@ bundle = {
         k: float(v) for k, v in enhanced_medians.to_dict().items()
     },
     "minmax_min": np.asarray(minmax_scaler.data_min_, dtype=np.float64),
+    "minmax_scale": np.asarray(minmax_scaler.scale_, dtype=np.float64),
+    "minmax_offset": np.asarray(minmax_scaler.min_, dtype=np.float64),
     "minmax_range": np.asarray(
         minmax_scaler.data_range_, dtype=np.float64
     ),
@@ -139,6 +141,17 @@ bundle = {
 
     # ---- provenance, shown in the web UI
     "meta": {
+        "baseline_name": "Shukla et al. (2023) close-replication Isolation Forest",
+        "baseline_features": list(SHUKLA_FEATURES),
+        "baseline_trees": int(N_TREES),
+        "baseline_sample_size": int(SAMPLE_SIZE),
+        "baseline_contamination_selection": "training accuracy only",
+        "baseline_label_mapping": (
+            "score > threshold => normal (0); score <= threshold => attack (1)"
+            if LABEL_SWITCHED else
+            "score > threshold => attack (1); score <= threshold => normal (0)"
+        ),
+        "hybrid_if_scales": list(IF_SCALES),
         "search_scoring": SEARCH_SCORING,
         "threshold_criterion": THRESHOLD_CRITERION,
         "baseline_params": {
@@ -153,6 +166,42 @@ bundle = {
         "test_mcc_if": float(if_row["MCC"]),
         "test_mcc_svm": float(base_row["MCC"]),
         "test_mcc_hybrid": float(hybrid_row["MCC"]),
+        "official_test_rows": int(len(y_test)),
+        "official_test_results": {
+            "baseline": {
+                "accuracy": float(if_row["Accuracy"]),
+                "precision": float(if_row["Precision"]),
+                "recall": float(if_row["Recall"]),
+                "f1": float(if_row["F1"]),
+                "specificity": float(if_row["Specificity"]),
+                "balanced_accuracy": float(if_row["Balanced_Accuracy"]),
+                "mcc": float(if_row["MCC"]),
+                "tn": int(if_row["TN"]), "fp": int(if_row["FP"]),
+                "fn": int(if_row["FN"]), "tp": int(if_row["TP"]),
+            },
+            "svm": {
+                "accuracy": float(base_row["Accuracy"]),
+                "precision": float(base_row["Precision"]),
+                "recall": float(base_row["Recall"]),
+                "f1": float(base_row["F1"]),
+                "specificity": float(base_row["Specificity"]),
+                "balanced_accuracy": float(base_row["Balanced_Accuracy"]),
+                "mcc": float(base_row["MCC"]),
+                "tn": int(base_row["TN"]), "fp": int(base_row["FP"]),
+                "fn": int(base_row["FN"]), "tp": int(base_row["TP"]),
+            },
+            "hybrid": {
+                "accuracy": float(hybrid_row["Accuracy"]),
+                "precision": float(hybrid_row["Precision"]),
+                "recall": float(hybrid_row["Recall"]),
+                "f1": float(hybrid_row["F1"]),
+                "specificity": float(hybrid_row["Specificity"]),
+                "balanced_accuracy": float(hybrid_row["Balanced_Accuracy"]),
+                "mcc": float(hybrid_row["MCC"]),
+                "tn": int(hybrid_row["TN"]), "fp": int(hybrid_row["FP"]),
+                "fn": int(hybrid_row["FN"]), "tp": int(hybrid_row["TP"]),
+            },
+        },
     },
 }
 

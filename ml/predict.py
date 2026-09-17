@@ -23,7 +23,7 @@ import joblib
 
 
 EPS = 1e-9
-MAX_ROWS = 200_000          # prototype guard
+MAX_ROWS = 300_000          # supports the complete 257,673-row UNSW-NB15 dataset
 
 
 # ============================================================ isolation forest
@@ -63,7 +63,7 @@ def score_forest(forest, X):
             node = np.where(internal, nxt, node).astype(np.int32)
             depth = depth + internal.astype(np.float64)
 
-        total += depth + c_adjust[node]
+        total = total + depth + c_adjust[node]
 
     mean_depth = total / float(forest["n_trees"])
     return np.power(2.0, -(mean_depth / forest["c_n"]))
@@ -76,9 +76,12 @@ def svm_decision(spec, frame):
 
     X = frame[spec["columns"]].to_numpy(dtype=np.float64)
     X = (X - spec["scaler_mean"]) / spec["scaler_scale"]
+    # RBFSVMClassifier.decision_function casts after StandardScaler.
+    X = X.astype(np.float32).astype(np.float64)
 
     SV = spec["support_vectors"]
     gamma = spec["gamma"]
+    support_norms = (SV ** 2).sum(1)[None, :]
 
     # chunk so a large upload cannot blow up memory on the kernel matrix
     out = np.empty(len(X), dtype=np.float64)
@@ -91,7 +94,7 @@ def svm_decision(spec, frame):
         sq = (
             (block ** 2).sum(1)[:, None]
             - 2.0 * block @ SV.T
-            + (SV ** 2).sum(1)[None, :]
+            + support_norms
         )
         np.maximum(sq, 0.0, out=sq)
 
@@ -118,14 +121,22 @@ def build_features(raw, bundle):
     X = X.fillna(pd.Series(bundle["train_medians"]))
 
     # min-max using the TRAINING range
-    scaled = (
-        X[features].to_numpy(dtype=np.float64) - bundle["minmax_min"]
-    ) / np.where(bundle["minmax_range"] == 0, 1.0, bundle["minmax_range"])
+    if "minmax_scale" in bundle and "minmax_offset" in bundle:
+        scale = bundle["minmax_scale"]
+        offset = bundle["minmax_offset"]
+    else:
+        ranges = np.asarray(bundle["minmax_range"], dtype=np.float64)
+        scale = 1.0 / np.where(ranges < 10 * np.finfo(np.float64).eps, 1.0, ranges)
+        offset = -np.asarray(bundle["minmax_min"]) * scale
+    scaled = X[features].to_numpy(dtype=np.float64) * scale + offset
 
     # --- isolation forest scores, one per scale
     scale_columns = {}
 
-    for scale in bundle["if_scales"]:
+    ordered_scales = [bundle["if_sample_size"]] + [
+        scale for scale in bundle["if_scales"] if scale != bundle["if_sample_size"]
+    ]
+    for scale in ordered_scales:
         scores = score_forest(bundle["forests"][scale], scaled)
         name = "if_score" if scale == bundle["if_sample_size"] \
             else f"if_score_s{scale}"
@@ -215,7 +226,13 @@ def metrics(y_true, y_pred, scores=None):
         "specificity": specificity,
         "balanced_accuracy": 0.5 * (recall + specificity),
         "f1": f1,
+        "f0_5": 1.25 * precision * recall / (0.25 * precision + recall)
+        if (0.25 * precision + recall) else 0.0,
+        "fpr": FP / (FP + TN) if (FP + TN) else 0.0,
+        "fnr": FN / (FN + TP) if (FN + TP) else 0.0,
         "mcc": mcc,
+        "roc_auc": None,
+        "pr_auc": None,
         "tn": TN, "fp": FP, "fn": FN, "tp": TP,
     }
 
@@ -241,6 +258,17 @@ def metrics(y_true, y_pred, scores=None):
         result["roc_auc"] = (
             ranks[y_true == 1].sum() - n_pos * (n_pos + 1) / 2.0
         ) / (n_pos * n_neg)
+
+    if scores is not None:
+        scores = np.asarray(scores)
+        order = np.argsort(-scores, kind="mergesort")
+        labels = y_true[order]
+        ends = np.r_[np.flatnonzero(np.diff(scores[order])), len(scores) - 1]
+        positives = np.cumsum(labels)[ends]
+        precision_at_threshold = positives / (ends + 1)
+        result["pr_auc"] = float(
+            np.sum(np.diff(np.r_[0, positives]) * precision_at_threshold) / y_true.sum()
+        ) if y_true.sum() else 0.0
 
     return result
 
@@ -306,9 +334,19 @@ def main():
         print(json.dumps({"ok": False, "error": "CSV has no rows."}))
         return 2
 
+    if "label" in raw.columns:
+        labels = pd.to_numeric(raw["label"], errors="coerce")
+        if not labels.isin([0, 1]).all():
+            print(json.dumps({"ok": False, "error": "Labels must be 0 (normal) or 1 (attack)."}))
+            return 2
+        y = labels.to_numpy(dtype=int)
+
     enhanced, if_scores = build_features(raw, bundle)
 
-    # ---- model 1: standalone Isolation Forest (Shukla baseline)
+    # ---- model 1: Shukla et al. (2023) close-replication baseline
+    # Uses ONLY the nine Shukla features after train-fitted MinMax scaling,
+    # T=100 and S=256 from the exported baseline forest. Extra IF scales and
+    # engineered features below are never used to make this baseline decision.
     if bundle["if_label_switched"]:
         if_pred = np.where(if_scores > bundle["if_threshold"], 0, 1)
         if_rank = -if_scores
@@ -331,12 +369,10 @@ def main():
         "truncated": truncated,
         "labelled": "label" in raw.columns,
         "meta": bundle.get("meta", {}),
+        "official_test_candidate": int(len(raw)) == int(bundle.get("meta", {}).get("official_test_rows", 82332)),
     }
 
     if "label" in raw.columns:
-        y = pd.to_numeric(raw["label"], errors="coerce").fillna(0).astype(int)
-        y = y.to_numpy()
-
         payload["actual"] = {
             "attacks": int(y.sum()),
             "normal": int((y == 0).sum()),

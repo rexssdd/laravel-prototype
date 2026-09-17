@@ -55,6 +55,12 @@ class AnalysisController extends Controller
         $stored = [];
 
         foreach ($request->file('files') as $file) {
+            /**
+             * Windows counts time spent waiting for Python against PHP's limit.
+             * Allow each file its worker timeout, interpreter probes and cleanup.
+             */
+            set_time_limit((int) ceil((float) config('ml.timeout'))
+                + 30 * count($this->runner->candidates()) + 30);
 
             $original = $file->getClientOriginalName();
 

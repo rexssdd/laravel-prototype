@@ -23,7 +23,7 @@ import joblib
 
 
 EPS = 1e-9
-MAX_ROWS = 200_000          # prototype guard
+MAX_ROWS = 300_000          # supports the complete 257,673-row UNSW-NB15 dataset
 
 
 # ============================================================ isolation forest
@@ -331,6 +331,7 @@ def main():
         "truncated": truncated,
         "labelled": "label" in raw.columns,
         "meta": bundle.get("meta", {}),
+        "official_test_candidate": int(len(raw)) == int(bundle.get("meta", {}).get("official_test_rows", 82332)),
     }
 
     if "label" in raw.columns:

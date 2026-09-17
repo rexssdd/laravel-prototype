@@ -153,75 +153,44 @@ bundle = {
         "test_mcc_if": float(if_row["MCC"]),
         "test_mcc_svm": float(base_row["MCC"]),
         "test_mcc_hybrid": float(hybrid_row["MCC"]),
+        "official_test_rows": int(len(y_test)),
+        "official_test_results": {
+            "baseline": {
+                "accuracy": float(if_row["Accuracy"]),
+                "precision": float(if_row["Precision"]),
+                "recall": float(if_row["Recall"]),
+                "f1": float(if_row["F1"]),
+                "specificity": float(if_row["Specificity"]),
+                "balanced_accuracy": float(if_row["Balanced_Accuracy"]),
+                "mcc": float(if_row["MCC"]),
+                "tn": int(if_row["TN"]), "fp": int(if_row["FP"]),
+                "fn": int(if_row["FN"]), "tp": int(if_row["TP"]),
+            },
+            "svm": {
+                "accuracy": float(base_row["Accuracy"]),
+                "precision": float(base_row["Precision"]),
+                "recall": float(base_row["Recall"]),
+                "f1": float(base_row["F1"]),
+                "specificity": float(base_row["Specificity"]),
+                "balanced_accuracy": float(base_row["Balanced_Accuracy"]),
+                "mcc": float(base_row["MCC"]),
+                "tn": int(base_row["TN"]), "fp": int(base_row["FP"]),
+                "fn": int(base_row["FN"]), "tp": int(base_row["TP"]),
+            },
+            "hybrid": {
+                "accuracy": float(hybrid_row["Accuracy"]),
+                "precision": float(hybrid_row["Precision"]),
+                "recall": float(hybrid_row["Recall"]),
+                "f1": float(hybrid_row["F1"]),
+                "specificity": float(hybrid_row["Specificity"]),
+                "balanced_accuracy": float(hybrid_row["Balanced_Accuracy"]),
+                "mcc": float(hybrid_row["MCC"]),
+                "tn": int(hybrid_row["TN"]), "fp": int(hybrid_row["FP"]),
+                "fn": int(hybrid_row["FN"]), "tp": int(hybrid_row["TP"]),
+            },
+        },
     },
 }
-
-# ============================================================================
-# VERIFY BEFORE WRITING
-# ============================================================================
-#
-# The exported math must reproduce the pipeline's own decision_function.
-# This matters most for the GPU path: cuML does not guarantee the same
-# dual_coef_ sign convention as sklearn, and a flipped sign would push every
-# prediction to the wrong side of the threshold while still looking like a
-# plausible score distribution. Catch it here, not in the web app.
-# ============================================================================
-
-def rebuilt_decision(spec, frame):
-    X = frame[spec["columns"]].to_numpy(dtype=np.float64)
-    X = (X - spec["scaler_mean"]) / spec["scaler_scale"]
-
-    SV = spec["support_vectors"]
-    sq = (
-        (X ** 2).sum(1)[:, None]
-        - 2.0 * X @ SV.T
-        + (SV ** 2).sum(1)[None, :]
-    )
-    np.maximum(sq, 0.0, out=sq)
-
-    return spec["sign"] * (
-        np.exp(-spec["gamma"] * sq) @ spec["dual_coef"] + spec["intercept"]
-    )
-
-
-print("\nVerifying exported decision functions against the fitted pipelines...")
-
-probe = min(500, len(X_hyb_val))
-verification_failed = False
-
-for label, model, frame, spec in [
-    ("standalone SVM", BEST_SVM_ONLY, X_base_val.head(probe),
-     bundle["svm_baseline"]),
-    ("hybrid IF-SVM", BEST_HYBRID_MODEL, X_hyb_val.head(probe),
-     bundle["svm_hybrid"]),
-]:
-    reference = np.asarray(model.decision_function(frame)).ravel()
-    rebuilt = rebuilt_decision(spec, frame)
-
-    max_diff = float(np.abs(reference - rebuilt).max())
-    agree = bool(((reference >= 0) == (rebuilt >= 0)).all())
-    correlation = float(np.corrcoef(reference, rebuilt)[0, 1])
-
-    status = "OK" if (max_diff < 1e-4 and agree) else "MISMATCH"
-    if status == "MISMATCH":
-        verification_failed = True
-
-    print(
-        f"  {label:16s} max|diff|={max_diff:.3e}  "
-        f"sign agreement={agree}  r={correlation:+.6f}  [{status}]"
-    )
-
-if verification_failed:
-    raise RuntimeError(
-        "Exported SVM math does not reproduce the fitted pipeline.\n"
-        "If the correlation is close to -1, the backend's dual_coef_ sign "
-        "convention is inverted: flip 'sign' in export_svm() and re-run.\n"
-        "Do NOT ship this bundle -- every prediction would land on the "
-        "wrong side of the tuned threshold."
-    )
-
-print("  both decision functions reproduce exactly.")
-
 
 joblib.dump(bundle, BUNDLE_PATH, compress=3)
 

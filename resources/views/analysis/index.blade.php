@@ -24,8 +24,8 @@
             Hybrid Isolation Forest–SVM
         </h1>
         <p class="mt-1 text-sm text-slate-500">
-            Upload network flow records and compare the Shukla baseline
-            against the proposed hybrid model.
+            Compare a Shukla et al. (2023) close-replication Isolation Forest baseline,
+            a standalone SVM reference, and the proposed Hybrid IF–SVM.
         </p>
     </header>
 
@@ -125,9 +125,9 @@
             <article class="rounded-xl border border-slate-200 bg-white p-5">
                 <div class="flex items-baseline justify-between">
                     <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                        Baseline
+                        Baseline 1
                     </h3>
-                    <span class="text-xs text-slate-400">Isolation Forest</span>
+                    <span class="text-xs text-slate-400">Shukla IF close replication</span>
                 </div>
                 <div id="panelBaseline" class="mt-4"></div>
             </article>
@@ -135,9 +135,9 @@
             <article class="rounded-xl border-2 border-indigo-200 bg-white p-5">
                 <div class="flex items-baseline justify-between">
                     <h3 class="text-sm font-semibold uppercase tracking-wide text-indigo-600">
-                        Hybrid
+                        Proposed Model
                     </h3>
-                    <span class="text-xs text-slate-400">IF + SVM</span>
+                    <span class="text-xs text-slate-400">Hybrid IF + SVM</span>
                 </div>
                 <div id="panelHybrid" class="mt-4"></div>
             </article>
@@ -146,10 +146,10 @@
             <article class="rounded-xl border border-slate-200 bg-white p-5">
             <div class="flex items-baseline justify-between">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                    Standalone SVM
+                    Baseline 2 — Standalone SVM
                 </h3>
                 <span class="text-xs text-slate-400">
-                    reference — isolates the fusion effect
+                    9 Shukla features · supervised reference
                 </span>
             </div>
             <div id="panelSvm" class="mt-4"></div>
@@ -421,11 +421,20 @@
         }
 
         fileSelect.innerHTML =
-            `<option value="__all__">All files (${ok.length})</option>` +
+            `<option value="__all__">All uploaded files — diagnostic only (${ok.length})</option>` +
             ok.map((r, i) => `<option value="${i}">${escapeHtml(r.file)}</option>`).join('');
 
         fileSelect.onchange = () => paint(fileSelect.value);
-        paint('__all__');
+
+        // The thesis' official evaluation is the 82,332-row held-out test
+        // partition. Prefer it when it is among the uploaded files instead
+        // of silently aggregating train + test into 257,673 rows.
+        const officialIndex = ok.findIndex((r) =>
+            r.labelled && (r.official_test_candidate || Number(r.rows) === 82332)
+        );
+        const initialScope = officialIndex >= 0 ? String(officialIndex) : '__all__';
+        fileSelect.value = initialScope;
+        paint(initialScope);
 
         results.classList.remove('hidden');
         results.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -437,9 +446,14 @@
         const source = combined ? payload.summary : ok[Number(which)];
         const labelled = combined ? payload.summary.labelled : source.labelled;
 
-        el('resultScope').textContent = combined
-            ? `${payload.summary.files} file(s) · ${formatNumber(payload.summary.rows)} rows`
-            : `${source.file} · ${formatNumber(source.rows)} rows`;
+        const isOfficialTest = !combined && labelled &&
+            (source.official_test_candidate || Number(source.rows) === 82332);
+
+        el('resultScope').textContent = isOfficialTest
+            ? `Official UNSW-NB15 held-out test · ${formatNumber(source.rows)} records`
+            : (combined
+                ? `Diagnostic aggregate only — NOT thesis test metrics · ${payload.summary.files} file(s) · ${formatNumber(payload.summary.rows)} rows`
+                : `Uploaded dataset analysis · ${source.file} · ${formatNumber(source.rows)} rows`);
 
         paintPanel('panelBaseline', source.baseline, labelled, null);
         paintPanel('panelSvm', source.svm, labelled, source.baseline);
@@ -448,9 +462,36 @@
         paintPreview(combined ? ok[0] : source, combined);
 
         const meta = (combined ? ok[0] : source).meta || {};
-        el('modelMeta').textContent = meta.search_scoring
+        let metaText = meta.search_scoring
             ? `Model selection: ${meta.search_scoring} · threshold criterion: ${meta.threshold_criterion || 'n/a'}`
             : '';
+
+        if (isOfficialTest && meta.official_test_results) {
+            const expected = meta.official_test_results;
+            const keys = ['baseline', 'svm', 'hybrid'];
+            const metricKeys = ['accuracy', 'precision', 'recall', 'specificity', 'f1', 'balanced_accuracy', 'mcc'];
+            const matches = keys.every((model) =>
+                expected[model] && metricKeys.every((metric) =>
+                    Math.abs(Number(source[model][metric]) - Number(expected[model][metric])) <= 1e-6
+                ) && ['tn','fp','fn','tp'].every((cell) =>
+                    Number(source[model][cell]) === Number(expected[model][cell])
+                )
+            );
+            metaText += `${metaText ? ' · ' : ''}Kaggle reproduction: ${matches ? 'MATCH' : 'MISMATCH'}`;
+        } else if (isOfficialTest && meta.test_accuracy_hybrid != null) {
+            // Backward compatibility with older bundles that exported only
+            // accuracy/MCC. A freshly exported bundle performs the full check.
+            const matches =
+                Math.abs(Number(source.baseline.accuracy) - Number(meta.test_accuracy_if)) <= 1e-6 &&
+                Math.abs(Number(source.svm.accuracy) - Number(meta.test_accuracy_svm)) <= 1e-6 &&
+                Math.abs(Number(source.hybrid.accuracy) - Number(meta.test_accuracy_hybrid)) <= 1e-6 &&
+                Math.abs(Number(source.baseline.mcc) - Number(meta.test_mcc_if)) <= 1e-6 &&
+                Math.abs(Number(source.svm.mcc) - Number(meta.test_mcc_svm)) <= 1e-6 &&
+                Math.abs(Number(source.hybrid.mcc) - Number(meta.test_mcc_hybrid)) <= 1e-6;
+            metaText += `${metaText ? ' · ' : ''}Kaggle reproduction: ${matches ? 'MATCH' : 'MISMATCH'} (accuracy/MCC)`;
+        }
+
+        el('modelMeta').textContent = metaText;
     }
 
     function paintPanel(id, data, labelled, compareTo) {
@@ -527,7 +568,7 @@
 
         const hasLabel = 'label' in rows[0];
 
-        const headers = ['Row', 'IF score', 'Baseline', 'SVM', 'Hybrid']
+        const headers = ['Row', 'IF score', 'Shukla IF', 'Standalone SVM', 'Hybrid IF–SVM']
             .concat(hasLabel ? ['Actual'] : []);
 
         el('previewHead').innerHTML =
