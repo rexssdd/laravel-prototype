@@ -366,7 +366,18 @@
                 body,
             });
 
-            const data = await response.json();
+            const raw = await response.text();
+            let data;
+
+            try {
+                data = JSON.parse(raw);
+            } catch {
+                const detail = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                throw new Error(
+                    `The server returned HTML instead of JSON (${response.status}). ` +
+                    (detail ? detail.slice(0, 240) : 'Check the PHP upload limits and Laravel log.')
+                );
+            }
 
             if (!response.ok) {
                 const messages = data.errors
