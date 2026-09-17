@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: hybrid-if-svm-api
+    runtime: python
+    buildCommand: pip install -r render_api/requirements.txt
+    startCommand: uvicorn render_api.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: models
+      - key: SUPABASE_UPLOADS_BUCKET
+        value: uploads
+      - key: SUPABASE_BUNDLE_PATH
+        value: inference_bundle.joblib
+      - key: SUPABASE_RESULTS_TABLE
+        value: analysis_results
